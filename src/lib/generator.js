@@ -22,19 +22,25 @@ function pick(list) {
 }
 
 // Picks from `list`, retrying a few times to avoid immediately repeating
-// `prev` (case-insensitively) — this is what keeps cut-up lines from
-// stuttering ("the the", "that that"). Falls back to a repeat if the pool
-// genuinely has nothing else to offer.
-function pickAvoiding(list, prev) {
+// `prev` under `normalize` (case-insensitively by default) — this is what
+// keeps cut-up lines from stuttering ("the the", "that that"), and stops
+// sentence splicing from joining a fragment to a near-copy of itself. Falls
+// back to a repeat if the pool genuinely has nothing else to offer.
+function pickAvoiding(list, prev, normalize = (s) => s.toLowerCase()) {
   if (!list.length) return undefined;
   let choice = pick(list);
   let attempts = 0;
-  while (prev && choice.toLowerCase() === prev.toLowerCase() && attempts < 8) {
+  while (prev && normalize(choice) === normalize(prev) && attempts < 8) {
     choice = pick(list);
     attempts++;
   }
   return choice;
 }
+
+// Sentences are compared with trailing punctuation stripped, so "It rained."
+// and "It rained" — or two sentences differing only in a final "." vs "!" —
+// still count as the same fragment for splicing purposes.
+const normalizeSentence = (s) => s.trim().toLowerCase().replace(/[.!?]+$/, '');
 
 function capitalize(line) {
   return line ? line[0].toUpperCase() + line.slice(1) : line;
@@ -52,8 +58,27 @@ function joinAvoidingRepeats(picks, separator) {
   return chosen.join(separator);
 }
 
+// When a slot's own POS bucket is empty, it falls back to a shared pool —
+// but if another slot in the same shape has a *singleton* bucket (exactly
+// one word/phrase), that word has no alternative: whichever slot is filled
+// first can "steal" it from the shared fallback pool, forcing the singleton
+// slot to repeat it right next to itself. Excluding singleton-bucket items
+// from other slots' fallback closes that gap. Non-singleton buckets are
+// left alone — pickAvoiding's retries already handle those statistically,
+// and excluding everything reserved would just empty the fallback in a
+// thin, heavily-bucketed pool.
+function fallbackExcludingReserved(shape, bucketsOf, fallback) {
+  const singletons = new Set(
+    shape.flatMap((bucket) => (bucketsOf[bucket]?.length === 1 ? bucketsOf[bucket] : []))
+  );
+  if (!singletons.size) return fallback;
+  const filtered = fallback.filter((item) => !singletons.has(item));
+  return filtered.length ? filtered : fallback;
+}
+
 function fillTemplate(shape, pools, fallback) {
-  const lists = shape.map((bucket) => (pools[bucket]?.length ? pools[bucket] : fallback));
+  const openFallback = fallbackExcludingReserved(shape, pools, fallback);
+  const lists = shape.map((bucket) => (pools[bucket]?.length ? pools[bucket] : openFallback));
   return joinAvoidingRepeats(lists, ' ');
 }
 
@@ -82,30 +107,26 @@ function grammaticalPhraseLine(buckets, fallback) {
     ['vp', 'pp'],
   ];
   const shape = pick(shapes);
-  const lists = shape.map((bucket) => (buckets[bucket]?.length ? buckets[bucket] : fallback));
+  const openFallback = fallbackExcludingReserved(shape, buckets, fallback);
+  const lists = shape.map((bucket) => (buckets[bucket]?.length ? buckets[bucket] : openFallback));
   return capitalize(joinAvoidingRepeats(lists, ', '));
 }
 
+function spliceSentence(line, pool) {
+  if (pool.length <= 1 || Math.random() >= 0.3) return capitalize(line);
+  const other = pickAvoiding(pool, line, normalizeSentence);
+  if (normalizeSentence(other) === normalizeSentence(line)) return capitalize(line);
+  return capitalize(`${line.replace(/[.!?]+$/, '')}, ${pick(SPLICE_CONJUNCTIONS)} ${other[0].toLowerCase() + other.slice(1)}`);
+}
+
 function randomSentenceLine(sentences) {
-  let line = pick(sentences);
-  if (sentences.length > 1 && Math.random() < 0.3) {
-    let other = pick(sentences);
-    if (other === line) other = pick(sentences);
-    line = `${line.replace(/[.!?]+$/, '')}, ${pick(SPLICE_CONJUNCTIONS)} ${other[0].toLowerCase() + other.slice(1)}`;
-  }
-  return capitalize(line);
+  return spliceSentence(pick(sentences), sentences);
 }
 
 function grammaticalSentenceLine(sentences) {
   const clauses = sentences.filter(looksLikeClause);
   const pool = clauses.length ? clauses : sentences;
-  let line = pick(pool);
-  if (pool.length > 1 && Math.random() < 0.3) {
-    let other = pick(pool);
-    if (other === line) other = pick(pool);
-    line = `${line.replace(/[.!?]+$/, '')}, ${pick(SPLICE_CONJUNCTIONS)} ${other[0].toLowerCase() + other.slice(1)}`;
-  }
-  return capitalize(line);
+  return spliceSentence(pick(pool), pool);
 }
 
 function generateLine({ unit, grammarMode, sources, keepers }) {
