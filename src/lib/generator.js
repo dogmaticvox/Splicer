@@ -21,20 +21,45 @@ function pick(list) {
   return list[Math.floor(Math.random() * list.length)];
 }
 
+// Picks from `list`, retrying a few times to avoid immediately repeating
+// `prev` (case-insensitively) — this is what keeps cut-up lines from
+// stuttering ("the the", "that that"). Falls back to a repeat if the pool
+// genuinely has nothing else to offer.
+function pickAvoiding(list, prev) {
+  if (!list.length) return undefined;
+  let choice = pick(list);
+  let attempts = 0;
+  while (prev && choice.toLowerCase() === prev.toLowerCase() && attempts < 8) {
+    choice = pick(list);
+    attempts++;
+  }
+  return choice;
+}
+
 function capitalize(line) {
   return line ? line[0].toUpperCase() + line.slice(1) : line;
 }
 
+function joinAvoidingRepeats(picks, separator) {
+  const chosen = [];
+  let prev = null;
+  for (const list of picks) {
+    const word = pickAvoiding(list, prev);
+    if (!word) continue;
+    chosen.push(word);
+    prev = word;
+  }
+  return chosen.join(separator);
+}
+
 function fillTemplate(shape, pools, fallback) {
-  return shape
-    .map((bucket) => pick(pools[bucket]?.length ? pools[bucket] : fallback))
-    .filter(Boolean)
-    .join(' ');
+  const lists = shape.map((bucket) => (pools[bucket]?.length ? pools[bucket] : fallback));
+  return joinAvoidingRepeats(lists, ' ');
 }
 
 function randomWordLine(words) {
   const count = 3 + Math.floor(Math.random() * 6); // 3–8 words
-  const line = Array.from({ length: count }, () => pick(words)).join(' ');
+  const line = joinAvoidingRepeats(Array.from({ length: count }, () => words), ' ');
   return capitalize(line);
 }
 
@@ -45,7 +70,7 @@ function grammaticalWordLine(pools, fallback) {
 
 function randomPhraseLine(phrases) {
   const count = 1 + Math.floor(Math.random() * 3); // 1–3 phrases
-  const line = Array.from({ length: count }, () => pick(phrases)).join(', ');
+  const line = joinAvoidingRepeats(Array.from({ length: count }, () => phrases), ', ');
   return capitalize(line);
 }
 
@@ -57,11 +82,8 @@ function grammaticalPhraseLine(buckets, fallback) {
     ['vp', 'pp'],
   ];
   const shape = pick(shapes);
-  const line = shape
-    .map((bucket) => pick(buckets[bucket]?.length ? buckets[bucket] : fallback))
-    .filter(Boolean)
-    .join(', ');
-  return capitalize(line);
+  const lists = shape.map((bucket) => (buckets[bucket]?.length ? buckets[bucket] : fallback));
+  return capitalize(joinAvoidingRepeats(lists, ', '));
 }
 
 function randomSentenceLine(sentences) {

@@ -21,7 +21,10 @@ export function buildPosPools(sources) {
     const doc = nlp(source.text || '');
     for (const [bucket, tag] of Object.entries(TAGS)) {
       for (const w of doc.match(tag).out('array')) {
-        const clean = w.trim().toLowerCase();
+        // compromise's `.out('array')` occasionally leaves sentence-final
+        // punctuation attached to the last term (e.g. "quarter."); strip it
+        // so pool entries are bare words and duplicate-adjacent checks work.
+        const clean = w.trim().toLowerCase().replace(/^[^a-z0-9']+|[^a-z0-9']+$/g, '');
         if (clean) pools[bucket].add(clean);
       }
     }

@@ -1,3 +1,5 @@
+import { newSource } from '../lib/source';
+
 export default function SourceEditor({ sources, onChange }) {
   function updateSource(id, patch) {
     onChange(sources.map((s) => (s.id === id ? { ...s, ...patch } : s)));
