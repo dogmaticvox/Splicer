@@ -6,9 +6,15 @@ export function splitWords(text) {
   return matches.map((w) => w.trim()).filter(Boolean);
 }
 
+// Comma-delimited, but also breaks on sentence-ending punctuation and
+// semicolons. Without that, prose with few or no commas (plain sentences)
+// collapses into one giant "phrase" — a pool that thin can only ever repeat
+// itself. Splitting on sentence boundaries too keeps phrases finer-grained
+// than sentences when commas are present, while still degrading gracefully
+// to sentence-sized chunks when they aren't.
 export function splitPhrases(text) {
   return text
-    .split(/[,\n]+/)
+    .split(/[,;.!?\n]+/)
     .map((p) => p.trim())
     .filter(Boolean);
 }
